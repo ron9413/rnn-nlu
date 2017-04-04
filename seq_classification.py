@@ -17,14 +17,14 @@ from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
-from tensorflow.python.ops import rnn_cell
+from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl as rnn_cell
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import init_ops
 
 import tensorflow as tf
 
 
-def attention_single_output_decoder(initial_state, 
+def attention_single_output_decoder(initial_state,
                                     attention_states,
                                     output_size=None,
                                     num_heads=1,
@@ -74,7 +74,7 @@ def attention_single_output_decoder(initial_state,
           s = math_ops.reduce_sum(
               v[i] * math_ops.tanh(hidden_features[i] + y), [2, 3])
           if use_attention is False: # apply mean pooling
-              weights = tf.tile(sequence_length, tf.pack([attn_length]))
+              weights = tf.tile(sequence_length, tf.stack([attn_length]))
               weights = array_ops.reshape(weights, tf.shape(s))
               a = array_ops.ones(tf.shape(s), dtype=dtype) / math_ops.to_float(weights)
               # a = array_ops.ones(tf.shape(s), dtype=dtype) / math_ops.to_float(tf.shape(s)[1])
@@ -88,14 +88,14 @@ def attention_single_output_decoder(initial_state,
           ds.append(array_ops.reshape(d, [-1, attn_size]))
       return attn_weights, ds
 
-    batch_attn_size = array_ops.pack([batch_size, attn_size])
+    batch_attn_size = array_ops.stack([batch_size, attn_size])
     attns = [array_ops.zeros(batch_attn_size, dtype=dtype)
              for _ in xrange(num_heads)]
     for a in attns:  # Ensure the second shape of attention vectors is set.
       a.set_shape([None, attn_size])
     if initial_state_attention:
       attn_weights, attns = attention(initial_state, use_attention=use_attention)
-    
+
     #with variable_scope.variable_scope(scope or "Linear"):
     matrix = variable_scope.get_variable("Out_Matrix", [attn_size, output_size])
     res = math_ops.matmul(attns[0], matrix) # NOTE: here we temporarily assume num_head = 1
@@ -104,12 +104,12 @@ def attention_single_output_decoder(initial_state,
                                               initializer=init_ops.constant_initializer(bias_start))
     output = res + bias_term
   return attention_states, attn_weights[0], attns[0], [output] # NOTE: here we temporarily assume num_head = 1
-  
-def generate_single_output(encoder_state, attention_states, sequence_length, targets, num_classes, buckets, 
+
+def generate_single_output(encoder_state, attention_states, sequence_length, targets, num_classes, buckets,
                        use_mean_attention=False,
                        softmax_loss_function=None, per_example_loss=False, name=None, use_attention=False):
   all_inputs = targets
-  with ops.op_scope(all_inputs, name, "model_with_buckets"):
+  with tf.name_scope(name, "model_with_buckets", all_inputs):
     with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                        reuse=None):
       bucket_attention_states, bucket_attn_weights, bucket_attns, bucket_outputs = attention_single_output_decoder(
@@ -118,17 +118,17 @@ def generate_single_output(encoder_state, attention_states, sequence_length, tar
                                                                                         sequence_length=sequence_length,
                                                                                         initial_state_attention=True,
                                                                                         use_attention=use_attention)
-        
+
       if softmax_loss_function is None:
         assert len(bucket_outputs) == len(targets) == 1
         # We need to make target and int64-tensor and set its shape.
         bucket_target = array_ops.reshape(math_ops.to_int64(targets[0]), [-1])
         crossent = nn_ops.sparse_softmax_cross_entropy_with_logits(
-            bucket_outputs[0], bucket_target)
+            labels=bucket_target, logits=bucket_outputs[0])
       else:
         assert len(bucket_outputs) == len(targets) == 1
         crossent = softmax_loss_function(bucket_outputs[0], targets[0])
-       
+
       batch_size = array_ops.shape(targets[0])[0]
       loss = tf.reduce_sum(crossent) / math_ops.cast(batch_size, dtypes.float32)
 
