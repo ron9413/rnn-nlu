@@ -5,13 +5,13 @@ Tensorflow implementation of attention-based LSTM models for sequence classifica
 
 **Setup**
 
-* Tensorflow, version >= r0.9 (https://www.tensorflow.org/versions/r0.9/get_started/index.html)
+* Tensorflow, version >= 1.0
 
 **Usage**:
 ```bash
-data_dir=data/ATIS_samples
+data_dir=data/
 model_dir=model_tmp
-max_sequence_length=50  # max length for train/valid/test sequence
+max_sequence_length=130  # max length for train/valid/test sequence
 task=joint  # available options: intent; tagging; joint
 bidirectional_rnn=True  # available options: True; False
 
@@ -21,6 +21,7 @@ python run_multi-task_rnn.py --data_dir $data_dir \
       --task $task \
       --bidirectional_rnn $bidirectional_rnn
 ```
+or simply type ./run.sh
 
 **Reference**
 
@@ -37,7 +38,3 @@ url={http://dx.doi.org/10.21437/Interspeech.2016-1352},
 pages={685--689}
 }
 ```
-
-**Contact** 
-
-Feel free to email liubing@cmu.edu for any pertinent questions/bugs regarding the code. 
