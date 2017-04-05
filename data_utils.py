@@ -47,6 +47,29 @@ def naive_tokenizer(sentence):
   """Naive tokenizer: split the sentence by space into a list of tokens."""
   return sentence.split()
 
+def naive_seg(sentence):
+  ''' Segment the sentence into words separated by space
+      Return segment list
+      Input should be utf-8 encoding
+      e.g.
+        你的English真的是very good的呢
+        ->[你,的,English,真,的,是,very,good,的,呢]
+  '''
+  sentence = sentence.split()
+  sentence_seg = []
+  for w in sentence:
+    tmp_w = ''
+    for c in w:
+      if u'\u4e00' <= c <= u'\u9fff':
+        if len(tmp_w) > 0:
+          sentence_seg.append(tmp_w)
+        sentence_seg.append(c)
+        tmp_w = ''
+      else:
+        tmp_w += c
+    if len(tmp_w) > 0:
+      sentence_seg.append(tmp_w)
+  return sentence_seg
 
 def create_vocabulary(vocabulary_path, data_path, max_vocabulary_size,
                       tokenizer=None, normalize_digits=True):
@@ -246,3 +269,8 @@ def prepare_multi_task_data(data_dir, in_vocab_size, out_vocab_size):
           in_seq_dev_ids_path, out_seq_dev_ids_path, label_dev_ids_path,
           in_seq_test_ids_path, out_seq_test_ids_path, label_test_ids_path,
           in_vocab_path, out_vocab_path, label_path)
+
+def prepare_one_data(sentence, vocab):
+    UNK_ID = UNK_ID_dict['with_padding']
+    token_ids = sentence_to_token_ids(sentence, vocab, UNK_ID, naive_seg, False)
+    return token_ids

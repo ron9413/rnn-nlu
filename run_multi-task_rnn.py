@@ -56,6 +56,7 @@ tf.app.flags.DEFINE_float("dropout_keep_prob", 0.5,
 tf.app.flags.DEFINE_boolean("bidirectional_rnn", True,
                             "Use birectional RNN")
 tf.app.flags.DEFINE_string("task", None, "Options: joint; intent; tagging")
+tf.app.flags.DEFINE_boolean("mode", "train", "Options: train; test(default: train)")
 FLAGS = tf.app.flags.FLAGS
 
 if FLAGS.max_sequence_length == 0:
@@ -193,7 +194,7 @@ def create_model(session, source_vocab_size, target_vocab_size, label_vocab_size
           task=task)
 
   ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
-  if ckpt and tf.gfile.Exists(ckpt.model_checkpoint_path):
+  if ckpt:
     print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
     model_train.saver.restore(session, ckpt.model_checkpoint_path)
   else:
@@ -281,7 +282,30 @@ def train():
         checkpoint_path = os.path.join(FLAGS.train_dir, "model.ckpt")
         model.saver.save(sess, checkpoint_path, global_step=model.global_step)
         step_time, loss = 0.0, 0.0
+        for bucket_id in range(len(_buckets)):
+            eval_loss = 0.0
+            encoder_inputs, tags, tag_weights, batch_sequence_length, labels = model_test.get_batch(
+                dev_set, bucket_id)
+            tagging_logits = []
+            classification_logits = []
+            if task['joint'] == 1:
+                _, step_loss, tagging_logits, classification_logits = model_test.joint_step(
+                    sess, encoder_inputs, tags, tag_weights, labels,
+                    batch_sequence_length, bucket_id, True)
+            elif task['tagging'] == 1:
+                _, step_loss, tagging_logits = model_test.tagging_step(
+                    sess, encoder_inputs, tags, tag_weights,
+                    batch_sequence_length, bucket_id, True)
+            elif task['intent'] == 1:
+                _, step_loss, classification_logits = model_test.classification_step(
+                    sess, encoder_inputs, labels,
+                    batch_sequence_length, bucket_id, True)
+            eval_ppx = math.exp(step_loss) if step_loss < 300 else float('inf')
+            print("validation perplexity %.2f" % eval_ppx)
+        sys.stdout.flush()
 
+
+        '''
         def run_valid_test(data_set, mode): # mode: Eval, Test
         # Run evals on development/test set and print the accuracy.
             word_list = list()
@@ -349,9 +373,63 @@ def train():
           best_test_score = test_tagging_result['f1']
           # save the best output file
           subprocess.call(['mv', current_taging_test_out_file, current_taging_test_out_file + '.best_f1_%.2f' % best_test_score])
+        '''
+def test():
+  print ('Applying Parameters:')
+  for k,v in FLAGS.__dict__['__flags'].items():
+    print ('%s: %s' % (k, str(v)))
+  print("Preparing data in %s" % FLAGS.data_dir)
+  vocab_path = ''
+  tag_vocab_path = ''
+  label_vocab_path = ''
+  in_seq_train, out_seq_train, label_train, in_seq_dev, out_seq_dev, label_dev, in_seq_test, out_seq_test, label_test, vocab_path, tag_vocab_path, label_vocab_path = data_utils.prepare_multi_task_data(
+    FLAGS.data_dir, FLAGS.in_vocab_size, FLAGS.out_vocab_size)
+
+  vocab, rev_vocab = data_utils.initialize_vocabulary(vocab_path)
+  tag_vocab, rev_tag_vocab = data_utils.initialize_vocabulary(tag_vocab_path)
+  label_vocab, rev_label_vocab = data_utils.initialize_vocabulary(label_vocab_path)
+  with tf.Session() as sess:
+    # Create model.
+    model, model_test = create_model(sess, len(vocab), len(tag_vocab), len(label_vocab))
+    def feed_sentence(sentence, vocab):
+      data_set = [[]]
+      token_ids = data_utils.prepare_one_data(sentence, vocab)
+      slot_ids = [0 for i in range(len(token_ids))]
+      data_set[0].append([token_ids, slot_ids, [0]])
+      encoder_inputs, tags, tag_weights, sequence_length, labels = model_test.get_one(
+          data_set, 0, 0)
+      if task['joint'] == 1:
+        _, step_loss, tagging_logits, classification_logits = model_test.joint_step(
+            sess, encoder_inputs, tags, tag_weights, labels,
+            sequence_length, 0, True)
+      elif task['tagging'] == 1:
+        _, step_loss, tagging_logits = model_test.tagging_step(
+            sess, encoder_inputs, tags, tag_weights,
+            sequence_length, 0, True)
+      elif task['intent'] == 1:
+        _, step_loss, classification_logits = model_test.classification_step(
+            sess, encoder_inputs, labels,
+            sequence_length, 0, True)
+      classification = [np.argmax(classification_logit) for classification_logit in classification_logits]
+      tagging_logit = [np.argmax(tagging_logit) for tagging_logit in tagging_logits]
+      classification_word = [rev_label_vocab[c] for c in classification]
+      tagging_word = [rev_tag_vocab[t] for t in tagging_logit[:sequence_length[0]]]
+      return classification_word, tagging_word
+
+    sys.stdout.write('>')
+    sys.stdout.flush()
+    sentence = sys.stdin.readline()
+    while sentence:
+      print(feed_sentence(sentence, vocab))
+      sys.stdout.write('>')
+      sys.stdout.flush()
+      sentence = sys.stdin.readline()
 
 def main(_):
+  if FLAGS.mode == "train":
     train()
+  else:
+    test()
 
 if __name__ == "__main__":
   tf.app.run()
