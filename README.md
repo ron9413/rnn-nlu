@@ -20,8 +20,10 @@ python run_multi-task_rnn.py --data_dir $data_dir \
       --max_sequence_length $max_sequence_length \
       --task $task \
       --bidirectional_rnn $bidirectional_rnn
-```
+
+
 or simply type ./run.sh
+```
 
 **Reference**
 
